@@ -1,67 +1,52 @@
 module mapper_lrn #(
-    parameter N_WIDTH = 2,    // Maximum number of batches (N = 4)
-    parameter M_WIDTH = 10,   // Maximum number of output feature maps 
-    parameter E_WIDTH = 6,    // Maximum height of output feature maps 
-    parameter F_WIDTH = 6,    // Maximum width of output feature maps 
-    parameter V_WIDTH = 2,    // Maximum padding number
-    parameter ADDR_BUS_WIDTH = 20,    // Bus width for the address
-    parameter DATA_WIDTH     = 16,    // Width of one data word from GLB
-    parameter ROW_MAJOR      = 1     // 1 = Row-major, 0 = Column-major
+    parameter N_WIDTH = 2,
+    parameter M_WIDTH = 10,
+    parameter E_WIDTH = 6,
+    parameter F_WIDTH = 6,
+    parameter V_WIDTH = 2,
+    parameter ADDR_BUS_WIDTH = 20,
+    parameter DATA_WIDTH = 16,
+    parameter ROW_MAJOR = 1
 )(
-    input  logic                             core_clk,               
-    input  logic                             reset,                  
-    input  logic                             start_normalization,    
-    input  logic [N_WIDTH- 1 : 0]            dim4,                   
-    input  logic [M_WIDTH- 1 : 0]            dim3,                   
-    input  logic [E_WIDTH- 1 : 0]            dim2,                   
-    input  logic [F_WIDTH- 1 : 0]            dim1,                   
-    input  logic [V_WIDTH- 1 : 0]            padding_num,            
-    input  logic                             normalized_window,   
-    input  logic                             full_flag,              
-    input  logic                             div_out_valid,          
-    output logic [ADDR_BUS_WIDTH - 1 : 0]    r_addr,                 
-    output logic                             r_enable,               
-    output logic [ADDR_BUS_WIDTH - 1 : 0]    w_addr,                 
-    output logic                             w_enable,               
-    output logic                             normalized_layer        
-);  
+    input  logic                             core_clk,
+    input  logic                             reset,
+    input  logic                             start_normalization,
+    input  logic [N_WIDTH-1:0]               dim4,
+    input  logic [M_WIDTH-1:0]               dim3,
+    input  logic [E_WIDTH-1:0]               dim2,
+    input  logic [F_WIDTH-1:0]               dim1,
+    input  logic [V_WIDTH-1:0]               padding_num,
+    input  logic                             normalized_window,
+    input  logic                             full_flag,
+    input  logic                             div_out_valid,
+    output logic [ADDR_BUS_WIDTH-1:0]        r_addr,
+    output logic                             r_enable,
+    output logic [ADDR_BUS_WIDTH-1:0]        w_addr,
+    output logic                             w_enable,
+    output logic                             normalized_layer
+);
 
-    // Internal signals
-    logic [(F_WIDTH + E_WIDTH + M_WIDTH) - 1 : 0] normalized_pixels_count;
-    logic [E_WIDTH- 1 : 0] padded_dim2;
-    logic [F_WIDTH- 1 : 0] padded_dim1;
-    logic [N_WIDTH- 1 : 0] idx4_w, idx4_r;
-    logic [M_WIDTH- 1 : 0] idx3_w, idx3_r;
-    logic [E_WIDTH- 1 : 0] idx2_w, idx2_r;
-    logic [F_WIDTH- 1 : 0] idx1_w, idx1_r;
+    // Internal counters and state
+    logic [N_WIDTH-1:0] idx4_r, idx4_w, next_idx4_w;
+    logic [M_WIDTH-1:0] idx3_r, idx3_w, next_idx3_w;
+    logic [E_WIDTH-1:0] idx2_r, idx2_w, next_idx2_w;
+    logic [F_WIDTH-1:0] idx1_r, idx1_w, next_idx1_w;
 
-    // New signals for timing improvement
-    logic increment_indices_w;
-    logic indices_at_max_w;
-    logic [3:0] index_stage;
-    logic next_idx1_w, next_idx2_w, next_idx3_w, next_idx4_w;
     logic idx1_max, idx2_max, idx3_max, idx4_max;
-    logic [ADDR_BUS_WIDTH-1:0] w_addr_temp, r_addr_temp;
+    logic increment_indices_w, delay_write;
 
-    // Padding calculation
+    logic [E_WIDTH-1:0] padded_dim2;
+    logic [F_WIDTH-1:0] padded_dim1;
+
+    logic [(F_WIDTH + E_WIDTH + M_WIDTH) - 1:0] normalized_pixels_count;
+
+    // Padded dimensions
     always_comb begin
         padded_dim2 = dim2 + (2 * padding_num);
         padded_dim1 = dim1 + (2 * padding_num);
     end
 
-    // Address computation signals
-    logic [F_WIDTH + E_WIDTH - 1 : 0] r_temp_1, r_temp_2; 
-    logic [F_WIDTH + E_WIDTH + M_WIDTH - 1 : 0] r_temp_3, r_temp_4; 
-    logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH - 1 : 0] r_temp_5;
-
-    logic [V_WIDTH + E_WIDTH - 1 : 0] w_temp_1; 
-    logic [V_WIDTH + F_WIDTH - 1 : 0] w_temp_2; 
-    logic [E_WIDTH + V_WIDTH + F_WIDTH - 1 : 0] w_temp_3; 
-    logic [F_WIDTH + E_WIDTH - 1 : 0] w_temp_4; 
-    logic [F_WIDTH + E_WIDTH + M_WIDTH - 1 : 0] w_temp_5, w_temp_6; 
-    logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH- 1 : 0] w_temp_7;
-
-    // Register comparison results
+    // Index boundary checks
     always_ff @(posedge core_clk or posedge reset) begin
         if (reset) begin
             idx1_max <= 0;
@@ -76,222 +61,166 @@ module mapper_lrn #(
         end
     end
 
-    // Separate block for index calculations
-    always_ff @(posedge core_clk or posedge reset) begin
-        if (reset) begin
-            next_idx1_w <= 0;
-            next_idx2_w <= 0;
-            next_idx3_w <= 0;
-            next_idx4_w <= 0;
-            index_stage <= 0;
-        end else if (increment_indices_w) begin
-            case (index_stage)
-                0: begin
-                    next_idx4_w <= idx4_max ? 0 : idx4_w + 1;
-                    index_stage <= 1;
-                end
-                1: begin
-                    if (idx4_max) begin
-                        next_idx3_w <= idx3_max ? 0 : idx3_w + 1;
-                    end
-                    index_stage <= 2;
-                end
-                2: begin
-                    if (idx4_max && idx3_max) begin
-                        next_idx2_w <= idx2_max ? 0 : idx2_w + 1;
-                    end
-                    index_stage <= 3;
-                end
-                3: begin
-                    if (idx4_max && idx3_max && idx2_max) begin
-                        next_idx1_w <= idx1_max ? 0 : idx1_w + 1;
-                    end
-                    index_stage <= 0;
-                end
-            endcase
-        end
+    // Next write indices generation (combinational)
+    always_comb begin
+        next_idx1_w = idx1_w;
+        next_idx2_w = idx2_w;
+        next_idx3_w = idx3_w;
+        next_idx4_w = idx4_w;
+
+        if (idx4_max) begin
+            next_idx4_w = 0;
+            if (idx3_max) begin
+                next_idx3_w = 0;
+                if (idx2_max) begin
+                    next_idx2_w = 0;
+                    if (idx1_max) begin
+                        next_idx1_w = 0;
+                    end else next_idx1_w = idx1_w + 1;
+                end else next_idx2_w = idx2_w + 1;
+            end else next_idx3_w = idx3_w + 1;
+        end else next_idx4_w = idx4_w + 1;
     end
 
-    // Address computation instantiations
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) R_1(
-        .in1(idx1_r),
-        .in2(dim2),
-        .out(r_temp_1)
-    );
+    // Multiplier blocks for address computation
+    logic [F_WIDTH + E_WIDTH - 1:0] r_temp_1, r_temp_2;
+    logic [F_WIDTH + E_WIDTH + M_WIDTH - 1:0] r_temp_3, r_temp_4;
+    logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH - 1:0] r_temp_5;
+    logic [ADDR_BUS_WIDTH-1:0] r_addr_temp;
 
-    // ... [Keep all your existing multiplier instantiations] ...
+    logic [V_WIDTH + E_WIDTH - 1:0] w_temp_1;
+    logic [V_WIDTH + F_WIDTH - 1:0] w_temp_2;
+    logic [E_WIDTH + V_WIDTH + F_WIDTH - 1:0] w_temp_3;
+    logic [F_WIDTH + E_WIDTH - 1:0] w_temp_4;
+    logic [F_WIDTH + E_WIDTH + M_WIDTH - 1:0] w_temp_5, w_temp_6;
+    logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH - 1:0] w_temp_7;
+    logic [ADDR_BUS_WIDTH-1:0] w_addr_temp;
 
-    // Pipeline address calculations
-    always_ff @(posedge core_clk) begin
-        if (reset) begin
-            w_addr_temp <= 0;
-            r_addr_temp <= 0;
-        end else begin
-            w_addr_temp <= w_temp_7 + w_temp_5 + w_temp_3 + w_temp_1;
-            r_addr_temp <= r_temp_5 + r_temp_3 + r_temp_1 + idx2_r;
-        end
+    // Instantiate your multiplier/adder modules here (not shown)
+    // Replace with behavioral computation for now
+    always_comb begin
+        r_temp_1 = idx1_r * dim2;
+        r_temp_2 = dim1 * dim2;
+        r_temp_3 = r_temp_2 * idx3_r;
+        r_temp_4 = r_temp_2 * dim3;
+        r_temp_5 = r_temp_4 * idx4_r;
+        r_addr_temp = r_temp_5 + r_temp_3 + r_temp_1 + idx2_r;
+
+        w_temp_1 = padding_num + idx2_w;
+        w_temp_2 = padding_num + idx1_w;
+        w_temp_3 = padded_dim2 * w_temp_2;
+        w_temp_4 = padded_dim1 * padded_dim2;
+        w_temp_5 = w_temp_4 * idx3_w;
+        w_temp_6 = w_temp_4 * dim3;
+        w_temp_7 = w_temp_6 * idx4_w;
+        w_addr_temp = w_temp_7 + w_temp_5 + w_temp_3 + w_temp_1;
     end
 
-    assign w_addr = w_addr_temp;
     assign r_addr = r_addr_temp;
+    assign w_addr = w_addr_temp;
 
-    // State definitions
-    typedef enum logic [2:0] {IDLE, WAIT, READ, PROCESS, WRITE} state_t;
-    
-    (* fsm_encoding = "gray" *)
+    // FSM states
+    typedef enum logic [2:0] {IDLE, READ, PROCESS, WRITE, WAIT} state_t;
     state_t current_state, next_state;
 
-    // State Memory
     always_ff @(posedge core_clk or posedge reset) begin
         if (reset)
             current_state <= IDLE;
-        else 
+        else
             current_state <= next_state;
-    end  
-
-    // Next State Logic
-    always_comb begin
-        case(current_state) 
-            IDLE: next_state = (start_normalization) ? READ : IDLE;
-            
-            READ: begin 
-                if(full_flag) begin
-                    next_state = PROCESS; 
-                end else begin
-                    next_state = READ; 
-                end
-            end 
-
-            PROCESS: begin
-                if(normalized_layer) begin
-                    next_state = IDLE; 
-                end
-                else if(div_out_valid) begin
-                    next_state = WRITE;         
-                end else if (normalized_window) begin
-                    next_state = WAIT;
-                end else begin
-                    next_state = PROCESS;       
-                end
-            end
-
-            WRITE: begin
-                if(!normalized_window) begin
-                    next_state = PROCESS;           
-                end
-                else begin
-                    next_state = WRITE;             
-                end
-            end 
-
-            WAIT: begin
-                next_state = READ; 
-            end
-
-            default: next_state = IDLE;
-        endcase 
     end
 
-    // Output Logic
+    always_comb begin
+        case (current_state)
+            IDLE    : next_state = start_normalization ? READ : IDLE;
+            READ    : next_state = full_flag ? PROCESS : READ;
+            PROCESS : next_state = (normalized_layer ? IDLE : (div_out_valid ? WRITE : (normalized_window ? WAIT : PROCESS)));
+            WRITE   : next_state = normalized_window ? WRITE : PROCESS;
+            WAIT    : next_state = READ;
+            default : next_state = IDLE;
+        endcase
+    end
+
+    // FSM outputs
     always_ff @(posedge core_clk or posedge reset) begin
         if (reset) begin
-            idx4_r <= 0;
-            idx3_r <= 0;
-            idx2_r <= 0;
-            idx1_r <= 0;
-            idx4_w <= 0;
-            idx3_w <= 0;
-            idx2_w <= 0;
-            idx1_w <= 0;
-            w_enable <= 0;
-            r_enable <= 0;
-            normalized_pixels_count <= 0;
+            idx1_r <= 0; idx2_r <= 0; idx3_r <= 0; idx4_r <= 0;
+            idx1_w <= 0; idx2_w <= 0; idx3_w <= 0; idx4_w <= 0;
+            w_enable <= 0; r_enable <= 0;
             normalized_layer <= 0;
+            normalized_pixels_count <= 0;
             increment_indices_w <= 0;
-        end
-        else begin
+            delay_write <= 0;
+        end else begin
             case (current_state)
                 IDLE: begin
-                    idx4_r <= 0;
-                    idx3_r <= 0;
-                    idx2_r <= 0;
-                    idx1_r <= 0;
-                    idx4_w <= 0;
-                    idx3_w <= 0;
-                    idx2_w <= 0;
-                    idx1_w <= 0;
-                    w_enable <= 0;
-                    r_enable <= 0;
+                    idx1_r <= 0; idx2_r <= 0; idx3_r <= 0; idx4_r <= 0;
+                    idx1_w <= 0; idx2_w <= 0; idx3_w <= 0; idx4_w <= 0;
+                    w_enable <= 0; r_enable <= 0;
                     normalized_pixels_count <= 0;
                     normalized_layer <= 0;
                     increment_indices_w <= 0;
-
+                    delay_write <= 0;
                     if(next_state == READ) r_enable <= 1;
                 end
 
-                READ: begin
-                    w_enable <= 0;
+                READ: begin 
                     if (idx3_r == dim3-1) r_enable <= 0;
-                    
-                    if(r_enable) begin
-                        if (idx4_r == dim4-1) begin
-                            idx4_r <= 0;
-                            if (idx3_r == dim3-1) begin
-                                idx3_r <= 0;
-                                if (idx2_r == dim2-1) begin
-                                    idx2_r <= 0;
-                                    if (idx1_r == dim1-1) begin
-                                        idx1_r <= 0;
-                                    end
-                                    else begin
-                                        idx1_r <= idx1_r + 1;
-                                    end
-                                end
-                                else idx2_r <= idx2_r + 1;
-                            end
-                            else idx3_r <= idx3_r + 1;
-                        end
-                        else idx4_r <= idx4_r + 1;
-                    end
+                    w_enable <= 0;
+                if(r_enable) begin
+                    if (idx4_r == dim4 - 1) begin
+                        idx4_r <= 0;
+                        if (idx3_r == dim3 - 1) begin
+                            idx3_r <= 0;
+                            if (idx2_r == dim2 - 1) begin
+                                idx2_r <= 0;
+                                if (idx1_r == dim1 - 1)
+                                    idx1_r <= 0;
+                                else
+                                    idx1_r <= idx1_r + 1;
+                            end else idx2_r <= idx2_r + 1;
+                        end else idx3_r <= idx3_r + 1;
+                    end else idx4_r <= idx4_r + 1;
                 end
+                end  
 
                 PROCESS: begin
                     r_enable <= 0;
-                    normalized_layer <= 0; 
-                    increment_indices_w <= 0;
-                    if(div_out_valid) begin
+                    normalized_layer <= 0;
+                    if (div_out_valid) begin
                         w_enable <= 1;
+                        delay_write <= 1;
                         normalized_pixels_count <= normalized_pixels_count + 1;
+                    end else begin
+                        w_enable <= 0;
+                        delay_write <= 0;
                     end
                 end
 
                 WRITE: begin
                     r_enable <= 0;
                     w_enable <= 0;
-        
+                    if (delay_write) begin
+                        // update indices AFTER writing
+                        idx1_w <= next_idx1_w;
+                        idx2_w <= next_idx2_w;
+                        idx3_w <= next_idx3_w;
+                        idx4_w <= next_idx4_w;
+                        delay_write <= 0;
+                    end
+
                     if (normalized_pixels_count == dim1 * dim2 * dim3 * dim4) begin
                         normalized_pixels_count <= 0;
                         normalized_layer <= 1;
                     end
-
-                    if (w_enable) begin
-                        increment_indices_w <= 1;
-                        idx4_w <= next_idx4_w;
-                        idx3_w <= next_idx3_w;
-                        idx2_w <= next_idx2_w;
-                        idx1_w <= next_idx1_w;
-                    end else begin
-                        increment_indices_w <= 0;
-                    end
                 end
 
                 WAIT: begin
-                    if(next_state == IDLE) r_enable <= 0;
-                    else                   r_enable <= 1;
+                    r_enable <= 1;
+                    w_enable <= 0;
                     normalized_layer <= 0;
-                    increment_indices_w <= 0;
                 end
-            endcase 
+            endcase
         end
     end
 
