@@ -11,29 +11,29 @@ module mapper_lrn #(
     input  logic                             core_clk,               
     input  logic                             reset,                  
     input  logic                             start_normalization,    
-    input  logic [N_WIDTH- 1 : 0]            dim4,                   
-    input  logic [M_WIDTH- 1 : 0]            dim3,                   
-    input  logic [E_WIDTH- 1 : 0]            dim2,                   
-    input  logic [F_WIDTH- 1 : 0]            dim1,                   
-    input  logic [V_WIDTH- 1 : 0]            padding_num,            
+    input  logic [N_WIDTH-1:0]              dim4,                   
+    input  logic [M_WIDTH-1:0]              dim3,                   
+    input  logic [E_WIDTH-1:0]              dim2,                   
+    input  logic [F_WIDTH-1:0]              dim1,                   
+    input  logic [V_WIDTH-1:0]              padding_num,            
     input  logic                             normalized_window,   
     input  logic                             full_flag,              
     input  logic                             div_out_valid,          
-    output logic [ADDR_BUS_WIDTH - 1 : 0]    r_addr,                 
+    output logic [ADDR_BUS_WIDTH-1:0]        r_addr,                 
     output logic                             r_enable,               
-    output logic [ADDR_BUS_WIDTH - 1 : 0]    w_addr,                 
+    output logic [ADDR_BUS_WIDTH-1:0]        w_addr,                 
     output logic                             w_enable,               
     output logic                             normalized_layer        
 );  
 
-    // Internal signals
-    logic [(F_WIDTH + E_WIDTH + M_WIDTH) - 1 : 0] normalized_pixels_count;
-    logic [E_WIDTH- 1 : 0] padded_dim2;
-    logic [F_WIDTH- 1 : 0] padded_dim1;
-    logic [N_WIDTH- 1 : 0] idx4_w, idx4_r;
-    logic [M_WIDTH- 1 : 0] idx3_w, idx3_r;
-    logic [E_WIDTH- 1 : 0] idx2_w, idx2_r;
-    logic [F_WIDTH- 1 : 0] idx1_w, idx1_r;
+    // Internal signals - initialize all to prevent X's
+    logic [(F_WIDTH + E_WIDTH + M_WIDTH)-1:0] normalized_pixels_count;
+    logic [E_WIDTH-1:0] padded_dim2;
+    logic [F_WIDTH-1:0] padded_dim1;
+    logic [N_WIDTH-1:0] idx4_w, idx4_r;
+    logic [M_WIDTH-1:0] idx3_w, idx3_r;
+    logic [E_WIDTH-1:0] idx2_w, idx2_r;
+    logic [F_WIDTH-1:0] idx1_w, idx1_r;
 
     // New signals for timing improvement
     logic increment_indices_w;
@@ -43,31 +43,31 @@ module mapper_lrn #(
     logic idx1_max, idx2_max, idx3_max, idx4_max;
     logic [ADDR_BUS_WIDTH-1:0] w_addr_temp, r_addr_temp;
 
-    // Padding calculation
+    // Address computation signals - initialize all to prevent X's
+    logic [F_WIDTH + E_WIDTH-1:0] r_temp_1, r_temp_2; 
+    logic [F_WIDTH + E_WIDTH + M_WIDTH-1:0] r_temp_3, r_temp_4; 
+    logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH-1:0] r_temp_5;
+
+    logic [V_WIDTH + E_WIDTH-1:0] w_temp_1; 
+    logic [V_WIDTH + F_WIDTH-1:0] w_temp_2; 
+    logic [E_WIDTH + V_WIDTH + F_WIDTH-1:0] w_temp_3; 
+    logic [F_WIDTH + E_WIDTH-1:0] w_temp_4; 
+    logic [F_WIDTH + E_WIDTH + M_WIDTH-1:0] w_temp_5, w_temp_6; 
+    logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH-1:0] w_temp_7;
+
+    // Padding calculation with default values
     always_comb begin
         padded_dim2 = dim2 + (2 * padding_num);
         padded_dim1 = dim1 + (2 * padding_num);
     end
 
-    // Address computation signals
-    logic [F_WIDTH + E_WIDTH - 1 : 0] r_temp_1, r_temp_2; 
-    logic [F_WIDTH + E_WIDTH + M_WIDTH - 1 : 0] r_temp_3, r_temp_4; 
-    logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH - 1 : 0] r_temp_5;
-
-    logic [V_WIDTH + E_WIDTH - 1 : 0] w_temp_1; 
-    logic [V_WIDTH + F_WIDTH - 1 : 0] w_temp_2; 
-    logic [E_WIDTH + V_WIDTH + F_WIDTH - 1 : 0] w_temp_3; 
-    logic [F_WIDTH + E_WIDTH - 1 : 0] w_temp_4; 
-    logic [F_WIDTH + E_WIDTH + M_WIDTH - 1 : 0] w_temp_5, w_temp_6; 
-    logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH- 1 : 0] w_temp_7;
-
     // Register comparison results
     always_ff @(posedge core_clk or posedge reset) begin
         if (reset) begin
-            idx1_max <= 0;
-            idx2_max <= 0;
-            idx3_max <= 0;
-            idx4_max <= 0;
+            idx1_max <= 1'b0;
+            idx2_max <= 1'b0;
+            idx3_max <= 1'b0;
+            idx4_max <= 1'b0;
         end else begin
             idx1_max <= (idx1_w == dim1-1);
             idx2_max <= (idx2_w == dim2-1);
@@ -79,130 +79,137 @@ module mapper_lrn #(
     // Separate block for index calculations
     always_ff @(posedge core_clk or posedge reset) begin
         if (reset) begin
-            next_idx1_w <= 0;
-            next_idx2_w <= 0;
-            next_idx3_w <= 0;
-            next_idx4_w <= 0;
-            index_stage <= 0;
+            next_idx1_w <= 1'b0;
+            next_idx2_w <= 1'b0;
+            next_idx3_w <= 1'b0;
+            next_idx4_w <= 1'b0;
+            index_stage <= 4'b0;
         end else if (increment_indices_w) begin
             case (index_stage)
-                0: begin
-                    next_idx4_w <= idx4_max ? 0 : idx4_w + 1;
-                    index_stage <= 1;
+                4'd0: begin
+                    next_idx4_w <= idx4_max ? '0 : idx4_w + 1'b1;
+                    index_stage <= 4'd1;
                 end
-                1: begin
+                4'd1: begin
                     if (idx4_max) begin
-                        next_idx3_w <= idx3_max ? 0 : idx3_w + 1;
+                        next_idx3_w <= idx3_max ? '0 : idx3_w + 1'b1;
                     end
-                    index_stage <= 2;
+                    index_stage <= 4'd2;
                 end
-                2: begin
+                4'd2: begin
                     if (idx4_max && idx3_max) begin
-                        next_idx2_w <= idx2_max ? 0 : idx2_w + 1;
+                        next_idx2_w <= idx2_max ? '0 : idx2_w + 1'b1;
                     end
-                    index_stage <= 3;
+                    index_stage <= 4'd3;
                 end
-                3: begin
+                4'd3: begin
                     if (idx4_max && idx3_max && idx2_max) begin
-                        next_idx1_w <= idx1_max ? 0 : idx1_w + 1;
+                        next_idx1_w <= idx1_max ? '0 : idx1_w + 1'b1;
                     end
-                    index_stage <= 0;
+                    index_stage <= 4'd0;
                 end
+                default: index_stage <= 4'd0;
             endcase
         end
     end
 
     // Address computation instantiations
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH))R_1(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) R_1(
         .in1(idx1_r),
         .in2(dim2),
         .out(r_temp_1)
     );
 
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH))R_2(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) R_2(
         .in1(dim1),
         .in2(dim2),
         .out(r_temp_2)
     );
 
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH))R_3(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH)) R_3(
         .in1(r_temp_2),
         .in2(idx3_r),
         .out(r_temp_3)
     );
 
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH))R_4(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH)) R_4(
         .in1(r_temp_2),
         .in2(dim3),
         .out(r_temp_4)
     );
 
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH),.in2_width(N_WIDTH))R_5(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH),.in2_width(N_WIDTH)) R_5(
         .in1(r_temp_4),
         .in2(idx4_r),
         .out(r_temp_5)
     );
 
-    cla #(.width_x(V_WIDTH),.width_y(E_WIDTH),.width_sum(V_WIDTH + E_WIDTH)) W_1(
-        .x(padding_num),
-        .y(idx2_w),
+    // Modified CLA instantiations with single width parameter
+    cla #(.width(V_WIDTH + E_WIDTH)) W_1(
+        .x({{(E_WIDTH){1'b0}}, padding_num}),
+        .y({{(V_WIDTH){1'b0}}, idx2_w}),
         .sum(w_temp_1)
     );
 
-    cla #(.width_x(V_WIDTH),.width_y(F_WIDTH),.width_sum(V_WIDTH + F_WIDTH)) W_2(
-        .x(padding_num),
-        .y(idx1_w),
+    cla #(.width(V_WIDTH + F_WIDTH)) W_2(
+        .x({{(F_WIDTH){1'b0}}, padding_num}),
+        .y({{(V_WIDTH){1'b0}}, idx1_w}),
         .sum(w_temp_2)
     );
 
-    unsigned_wallace_tree_multiplier #(.in1_width(E_WIDTH),.in2_width(V_WIDTH + F_WIDTH))W_3(
+    unsigned_wallace_tree_multiplier #(.in1_width(E_WIDTH),.in2_width(V_WIDTH + F_WIDTH)) W_3(
         .in1(padded_dim2),
         .in2(w_temp_2),
         .out(w_temp_3)
     );
 
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH))W_4(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) W_4(
         .in1(padded_dim1),
         .in2(padded_dim2),
         .out(w_temp_4)
     );
 
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH))W_5(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH)) W_5(
         .in1(w_temp_4),
         .in2(idx3_w),
         .out(w_temp_5)
     );
  
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH))W_6(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH)) W_6(
         .in1(w_temp_4),
         .in2(dim3),
         .out(w_temp_6)
     );
    
-    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH),.in2_width(N_WIDTH))W_7(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH),.in2_width(N_WIDTH)) W_7(
         .in1(w_temp_6),
         .in2(idx4_w),
         .out(w_temp_7)
     );
 
-    // ... [Keep all your existing multiplier instantiations] ...
-
     // Pipeline address calculations
-    always_ff @(posedge core_clk) begin
+    always_ff @(posedge core_clk or posedge reset) begin
         if (reset) begin
-            w_addr_temp <= 0;
-            r_addr_temp <= 0;
+            w_addr_temp <= '0;
+            r_addr_temp <= '0;
         end else begin
             w_addr_temp <= w_temp_7 + w_temp_5 + w_temp_3 + w_temp_1;
             r_addr_temp <= r_temp_5 + r_temp_3 + r_temp_1 + idx2_r;
         end
     end
 
+    // Clean address assignments
     assign w_addr = w_addr_temp;
     assign r_addr = r_addr_temp;
 
     // State definitions
-    typedef enum logic [2:0] {IDLE, WAIT, READ, PROCESS, WRITE} state_t;
+    typedef enum logic [2:0] {
+        IDLE      = 3'b000,
+        WAIT      = 3'b001,
+        READ      = 3'b010,
+        PROCESS   = 3'b011,
+        WRITE     = 3'b100
+    } state_t;
     
     (* fsm_encoding = "gray" *)
     state_t current_state, next_state;
@@ -217,8 +224,11 @@ module mapper_lrn #(
 
     // Next State Logic
     always_comb begin
+        next_state = current_state; // Default assignment
         case(current_state) 
-            IDLE: next_state = (start_normalization) ? READ : IDLE;
+            IDLE: begin
+                next_state = start_normalization ? READ : IDLE;
+            end
             
             READ: begin 
                 if(full_flag) begin
@@ -258,86 +268,83 @@ module mapper_lrn #(
         endcase 
     end
 
-    // Output Logic
+    // Output Logic with explicit defaults
     always_ff @(posedge core_clk or posedge reset) begin
         if (reset) begin
-            idx4_r <= 0;
-            idx3_r <= 0;
-            idx2_r <= 0;
-            idx1_r <= 0;
-            idx4_w <= 0;
-            idx3_w <= 0;
-            idx2_w <= 0;
-            idx1_w <= 0;
-            w_enable <= 0;
-            r_enable <= 0;
-            normalized_pixels_count <= 0;
-            normalized_layer <= 0;
-            increment_indices_w <= 0;
+            idx4_r <= '0;
+            idx3_r <= '0;
+            idx2_r <= '0;
+            idx1_r <= '0;
+            idx4_w <= '0;
+            idx3_w <= '0;
+            idx2_w <= '0;
+            idx1_w <= '0;
+            w_enable <= 1'b0;
+            r_enable <= 1'b0;
+            normalized_pixels_count <= '0;
+            normalized_layer <= 1'b0;
+            increment_indices_w <= 1'b0;
         end
         else begin
+            // Default assignments to prevent latches
+            w_enable <= 1'b0;
+            r_enable <= 1'b0;
+            increment_indices_w <= 1'b0;
+            
             case (current_state)
                 IDLE: begin
-                    idx4_r <= 0;
-                    idx3_r <= 0;
-                    idx2_r <= 0;
-                    idx1_r <= 0;
-                    idx4_w <= 0;
-                    idx3_w <= 0;
-                    idx2_w <= 0;
-                    idx1_w <= 0;
-                    w_enable <= 0;
-                    r_enable <= 0;
-                    normalized_pixels_count <= 0;
-                    normalized_layer <= 0;
-                    increment_indices_w <= 0;
+                    idx4_r <= '0;
+                    idx3_r <= '0;
+                    idx2_r <= '0;
+                    idx1_r <= '0;
+                    idx4_w <= '0;
+                    idx3_w <= '0;
+                    idx2_w <= '0;
+                    idx1_w <= '0;
+                    normalized_pixels_count <= '0;
+                    normalized_layer <= 1'b0;
 
-                    if(next_state == READ) r_enable <= 1;
+                    if(next_state == READ) r_enable <= 1'b1;
                 end
 
                 READ: begin
-                    w_enable <= 0;
-                    if (idx3_r == dim3-1) r_enable <= 0;
+                    if (idx3_r == dim3-1) r_enable <= 1'b0;
+                    else r_enable <= 1'b1;
                     
                     if(r_enable) begin
                         if (idx4_r == dim4-1) begin
-                            idx4_r <= 0;
+                            idx4_r <= '0;
                             if (idx3_r == dim3-1) begin
-                                idx3_r <= 0;
+                                idx3_r <= '0;
                                 if (idx2_r == dim2-1) begin
-                                    idx2_r <= 0;
+                                    idx2_r <= '0;
                                     if (idx1_r == dim1-1) begin
-                                        idx1_r <= 0;
+                                        idx1_r <= '0;
                                     end
                                     else begin
-                                        idx1_r <= idx1_r + 1;
+                                        idx1_r <= idx1_r + 1'b1;
                                     end
                                 end
-                                else idx2_r <= idx2_r + 1;
+                                else idx2_r <= idx2_r + 1'b1;
                             end
-                            else idx3_r <= idx3_r + 1;
+                            else idx3_r <= idx3_r + 1'b1;
                         end
-                        else idx4_r <= idx4_r + 1;
+                        else idx4_r <= idx4_r + 1'b1;
                     end
                 end
 
                 PROCESS: begin
-                    r_enable <= 0;
-                    normalized_layer <= 0; 
-                    increment_indices_w <= 0;
+                    normalized_layer <= 1'b0; 
                     if(div_out_valid) begin
-                        w_enable <= 1;
-                        normalized_pixels_count <= normalized_pixels_count + 1;
+                        w_enable <= 1'b1;
+                        normalized_pixels_count <= normalized_pixels_count + 1'b1;
                     end
                 end
 
                 WRITE: begin
-                    r_enable <= 0;
-                    w_enable <= 0;
-        
                     if (normalized_pixels_count == dim1 * dim2 * dim3 * dim4) begin
-                        normalized_pixels_count <= 0;
-                        normalized_layer <= 1;
+                        normalized_pixels_count <= '0;
+                        normalized_layer <= 1'b1;
                     end
 
                     if (w_enable) begin
