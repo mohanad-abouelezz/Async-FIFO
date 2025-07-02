@@ -47,6 +47,7 @@ module mapper_lrn #(
 
     // Generate indices internally to get the address
     logic [N_WIDTH-1 : 0]  idx4_w_pipeline1, idx4_w_pipeline2; // Pipeline stages for idx4_w
+    logic [N_WIDTH-1 : 0]  idx4_w;
     logic [M_WIDTH-1 : 0]  idx3_w;
     logic [E_WIDTH-1 : 0]  idx2_w;
     logic [F_WIDTH-1 : 0]  idx1_w;
@@ -108,13 +109,13 @@ module mapper_lrn #(
     // Modified CLA instantiations
     cla #(.width(V_WIDTH + E_WIDTH)) W_1(
         .x({{E_WIDTH{1'b0}}, padding_num}),
-        .y({V_WIDTH{1'b0}}, idx2_w),
+        .y({{V_WIDTH{1'b0}}, idx2_w}),
         .sum(w_temp_1)
     );
 
     cla #(.width(V_WIDTH + F_WIDTH)) W_2(
-        .x({F_WIDTH{1'b0}}, padding_num),
-        .y({V_WIDTH{1'b0}}, idx1_w),
+        .x({{F_WIDTH{1'b0}}, padding_num}),
+        .y({{V_WIDTH{1'b0}}, idx1_w}),
         .sum(w_temp_2)
     );
 
