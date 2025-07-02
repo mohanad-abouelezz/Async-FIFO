@@ -52,9 +52,10 @@ module mapper_lrn #(
     logic [F_WIDTH-1 : 0]  idx1_w_pipeline1, idx1_w_pipeline2; // Pipeline stages for idx1_w
     
     logic [N_WIDTH-1 : 0]  idx4_w, idx4_r;
-    logic [M_WIDTH-1 : 0]  idx3_r;
-    logic [E_WIDTH-1 : 0]  idx2_r;
-    logic [F_WIDTH-1 : 0]  idx1_r;
+    logic [M_WIDTH-1 : 0]  idx3_w, idx3_r;
+    logic [E_WIDTH-1 : 0]  idx2_w, idx2_r;
+    logic [F_WIDTH-1 : 0]  idx1_w, idx1_r;
+
 
     // We consider the padding ONLY while writing 
     always_comb begin
