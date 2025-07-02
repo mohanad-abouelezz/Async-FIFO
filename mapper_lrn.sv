@@ -125,14 +125,14 @@ module mapper_lrn #(
     );
 
     unsigned_wallace_tree_multiplier #(.in1_width(E_WIDTH),.in2_width(V_WIDTH + F_WIDTH)) W_3(
-        .in1(padded_dim2_reg),
+        .in1(padded_dim2),
         .in2(w_temp_2),
         .out(w_temp_3)
     );
 
     unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) W_4(
-        .in1(padded_dim1_reg),
-        .in2(padded_dim2_reg),
+        .in1(padded_dim1),
+        .in2(padded_dim2),
         .out(w_temp_4)
     );
 
