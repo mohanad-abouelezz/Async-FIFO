@@ -46,13 +46,12 @@ module mapper_lrn #(
     logic [F_WIDTH-1 : 0] padded_dim1;
 
     // Generate indices internally to get the address
-    logic [N_WIDTH-1 : 0]  idx4_w_pipeline1, idx4_w_pipeline2; // Pipeline stages for idx4_w
-    logic [N_WIDTH-1 : 0]  idx4_w;
-    logic [M_WIDTH-1 : 0]  idx3_w;
-    logic [E_WIDTH-1 : 0]  idx2_w;
-    logic [F_WIDTH-1 : 0]  idx1_w;
-
-    logic [N_WIDTH-1 : 0]  idx4_r;
+    logic [N_WIDTH-1 : 0]  idx4_w_pipeline1, idx4_w_pipeline2, idx4_w_pipeline3; // Pipeline stages for idx4_w
+    logic [M_WIDTH-1 : 0]  idx3_w_pipeline1, idx3_w_pipeline2; // Pipeline stages for idx3_w
+    logic [E_WIDTH-1 : 0]  idx2_w_pipeline1, idx2_w_pipeline2; // Pipeline stages for idx2_w
+    logic [F_WIDTH-1 : 0]  idx1_w_pipeline1, idx1_w_pipeline2; // Pipeline stages for idx1_w
+    
+    logic [N_WIDTH-1 : 0]  idx4_w, idx4_r;
     logic [M_WIDTH-1 : 0]  idx3_r;
     logic [E_WIDTH-1 : 0]  idx2_r;
     logic [F_WIDTH-1 : 0]  idx1_r;
@@ -109,13 +108,13 @@ module mapper_lrn #(
     // Modified CLA instantiations
     cla #(.width(V_WIDTH + E_WIDTH)) W_1(
         .x({{E_WIDTH{1'b0}}, padding_num}),
-        .y({{V_WIDTH{1'b0}}, idx2_w}),
+        .y({{V_WIDTH{1'b0}}, idx2_w_pipeline2}),
         .sum(w_temp_1)
     );
 
     cla #(.width(V_WIDTH + F_WIDTH)) W_2(
         .x({{F_WIDTH{1'b0}}, padding_num}),
-        .y({{V_WIDTH{1'b0}}, idx1_w}),
+        .y({{V_WIDTH{1'b0}}, idx1_w_pipeline2}),
         .sum(w_temp_2)
     );
 
@@ -133,7 +132,7 @@ module mapper_lrn #(
 
     unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH), .in2_width(M_WIDTH)) W_5(
         .in1(w_temp_4),
-        .in2(idx3_w),
+        .in2(idx3_w_pipeline2),
         .out(w_temp_5)
     );
 
@@ -145,7 +144,7 @@ module mapper_lrn #(
 
     unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH), .in2_width(N_WIDTH)) W_7(
         .in1(w_temp_6),
-        .in2(idx4_w_pipeline2),  // Use pipeline stage of idx4_w
+        .in2(idx4_w_pipeline3),
         .out(w_temp_7)
     );
 
@@ -165,10 +164,27 @@ module mapper_lrn #(
             current_state <= IDLE;
             idx4_w_pipeline1 <= 0;
             idx4_w_pipeline2 <= 0;
+            idx4_w_pipeline3 <= 0;
+            idx3_w_pipeline1 <= 0;
+            idx3_w_pipeline2 <= 0;
+            idx2_w_pipeline1 <= 0;
+            idx2_w_pipeline2 <= 0;
+            idx1_w_pipeline1 <= 0;
+            idx1_w_pipeline2 <= 0;
         end else begin
             current_state <= next_state;
             idx4_w_pipeline1 <= idx4_w;  // Pipeline stage 1
             idx4_w_pipeline2 <= idx4_w_pipeline1;  // Pipeline stage 2
+            idx4_w_pipeline3 <= idx4_w_pipeline2;  // Pipeline stage 3
+
+            idx3_w_pipeline1 <= idx3_w;  // Pipeline stage 1 for idx3_w
+            idx3_w_pipeline2 <= idx3_w_pipeline1;  // Pipeline stage 2 for idx3_w
+
+            idx2_w_pipeline1 <= idx2_w;  // Pipeline stage 1 for idx2_w
+            idx2_w_pipeline2 <= idx2_w_pipeline1;  // Pipeline stage 2 for idx2_w
+
+            idx1_w_pipeline1 <= idx1_w;  // Pipeline stage 1 for idx1_w
+            idx1_w_pipeline2 <= idx1_w_pipeline1;  // Pipeline stage 2 for idx1_w
         end
     end
 
