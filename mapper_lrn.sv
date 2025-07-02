@@ -64,8 +64,8 @@ module mapper_lrn #(
 
     // We consider the padding ONLY while writing 
     always_comb begin
-        padded_dim2 = dim2 + (2 * padding_num);
-        padded_dim1 = dim1 + (2 * padding_num);
+        padded_dim2 = dim2 + (padding_num << 1);
+        padded_dim1 = dim1 + (padding_num << 1);
     end
 
 /*--------------------------- Address computation --------------------------------------*/
