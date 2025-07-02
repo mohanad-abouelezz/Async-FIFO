@@ -1,12 +1,12 @@
 module mapper_lrn #(
-    parameter N_WIDTH = 2,    // Maximum number of batches (N = 4)
-    parameter M_WIDTH = 10,   // Maximum number of output feature maps 
-    parameter E_WIDTH = 6,    // Maximum height of output feature maps 
-    parameter F_WIDTH = 6,    // Maximum width of output feature maps 
-    parameter V_WIDTH = 2,    // Maximum padding number
-    parameter ADDR_BUS_WIDTH = 20,    // Bus width for the address
-    parameter DATA_WIDTH     = 16,    // Width of one data word from GLB
-    parameter ROW_MAJOR      = 1     // 1 = Row-major, 0 = Column-major
+    parameter N_WIDTH = 2,    
+    parameter M_WIDTH = 10,   
+    parameter E_WIDTH = 6,    
+    parameter F_WIDTH = 6,    
+    parameter V_WIDTH = 2,    
+    parameter ADDR_BUS_WIDTH = 20,    
+    parameter DATA_WIDTH     = 16,    
+    parameter ROW_MAJOR      = 1     
 )(
     input  logic                             core_clk,               
     input  logic                             reset,                  
@@ -26,24 +26,24 @@ module mapper_lrn #(
     output logic                             normalized_layer        
 );  
 
-    // Internal signals - initialize all to prevent X's
+    // Internal signals
     logic [(F_WIDTH + E_WIDTH + M_WIDTH)-1:0] normalized_pixels_count;
-    logic [E_WIDTH-1:0] padded_dim2;
-    logic [F_WIDTH-1:0] padded_dim1;
+    logic [E_WIDTH-1:0] padded_dim2_reg;
+    logic [F_WIDTH-1:0] padded_dim1_reg;
     logic [N_WIDTH-1:0] idx4_w, idx4_r;
     logic [M_WIDTH-1:0] idx3_w, idx3_r;
     logic [E_WIDTH-1:0] idx2_w, idx2_r;
     logic [F_WIDTH-1:0] idx1_w, idx1_r;
 
-    // New signals for timing improvement
+    // Timing improvement signals
     logic increment_indices_w;
     logic indices_at_max_w;
     logic [3:0] index_stage;
     logic next_idx1_w, next_idx2_w, next_idx3_w, next_idx4_w;
     logic idx1_max, idx2_max, idx3_max, idx4_max;
-    logic [ADDR_BUS_WIDTH-1:0] w_addr_temp, r_addr_temp;
+    logic write_update_valid;
 
-    // Address computation signals - initialize all to prevent X's
+    // Address computation signals
     logic [F_WIDTH + E_WIDTH-1:0] r_temp_1, r_temp_2; 
     logic [F_WIDTH + E_WIDTH + M_WIDTH-1:0] r_temp_3, r_temp_4; 
     logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH-1:0] r_temp_5;
@@ -55,10 +55,20 @@ module mapper_lrn #(
     logic [F_WIDTH + E_WIDTH + M_WIDTH-1:0] w_temp_5, w_temp_6; 
     logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH-1:0] w_temp_7;
 
-    // Padding calculation with default values
-    always_comb begin
-        padded_dim2 = dim2 + (2 * padding_num);
-        padded_dim1 = dim1 + (2 * padding_num);
+    // Pipeline registers for address calculation
+    logic [ADDR_BUS_WIDTH-1:0] w_sum1, w_sum2, w_sum3;
+    logic [ADDR_BUS_WIDTH-1:0] w_addr_temp, r_addr_temp;
+    logic [ADDR_BUS_WIDTH-1:0] aligned_w_addr;
+
+    // Padding calculation with registered outputs
+    always_ff @(posedge core_clk or posedge reset) begin
+        if (reset) begin
+            padded_dim2_reg <= '0;
+            padded_dim1_reg <= '0;
+        end else begin
+            padded_dim2_reg <= dim2 + (padding_num << 1);
+            padded_dim1_reg <= dim1 + (padding_num << 1);
+        end
     end
 
     // Register comparison results
@@ -76,7 +86,16 @@ module mapper_lrn #(
         end
     end
 
-    // Separate block for index calculations
+    // Write update synchronization
+    always_ff @(posedge core_clk or posedge reset) begin
+        if (reset) begin
+            write_update_valid <= 1'b0;
+        end else begin
+            write_update_valid <= w_enable && !normalized_layer;
+        end
+    end
+
+// Separate block for index calculations
     always_ff @(posedge core_clk or posedge reset) begin
         if (reset) begin
             next_idx1_w <= 1'b0;
@@ -144,7 +163,7 @@ module mapper_lrn #(
         .out(r_temp_5)
     );
 
-    // Modified CLA instantiations with single width parameter
+    // Modified CLA instantiations
     cla #(.width(V_WIDTH + E_WIDTH)) W_1(
         .x({{(E_WIDTH){1'b0}}, padding_num}),
         .y({{(V_WIDTH){1'b0}}, idx2_w}),
@@ -158,14 +177,14 @@ module mapper_lrn #(
     );
 
     unsigned_wallace_tree_multiplier #(.in1_width(E_WIDTH),.in2_width(V_WIDTH + F_WIDTH)) W_3(
-        .in1(padded_dim2),
+        .in1(padded_dim2_reg),
         .in2(w_temp_2),
         .out(w_temp_3)
     );
 
     unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) W_4(
-        .in1(padded_dim1),
-        .in2(padded_dim2),
+        .in1(padded_dim1_reg),
+        .in2(padded_dim2_reg),
         .out(w_temp_4)
     );
 
@@ -187,19 +206,30 @@ module mapper_lrn #(
         .out(w_temp_7)
     );
 
-    // Pipeline address calculations
+    // Pipeline stages for address calculation
     always_ff @(posedge core_clk or posedge reset) begin
         if (reset) begin
+            w_sum1 <= '0;
+            w_sum2 <= '0;
+            w_sum3 <= '0;
             w_addr_temp <= '0;
             r_addr_temp <= '0;
+            aligned_w_addr <= '0;
         end else begin
-            w_addr_temp <= w_temp_7 + w_temp_5 + w_temp_3 + w_temp_1;
+            // Pipeline stages for write address
+            w_sum1 <= w_temp_7 + w_temp_5;
+            w_sum2 <= w_temp_3 + w_temp_1;
+            w_sum3 <= w_sum1 + w_sum2;
+            w_addr_temp <= w_sum3;
+            aligned_w_addr <= {w_addr_temp[ADDR_BUS_WIDTH-1:2], 2'b00};
+            
+            // Read address calculation
             r_addr_temp <= r_temp_5 + r_temp_3 + r_temp_1 + idx2_r;
         end
     end
 
-    // Clean address assignments
-    assign w_addr = w_addr_temp;
+    // Address assignments
+    assign w_addr = aligned_w_addr;
     assign r_addr = r_addr_temp;
 
     // State definitions
@@ -286,6 +316,11 @@ module mapper_lrn #(
             increment_indices_w <= 1'b0;
         end
         else begin           
+            // Default assignments to prevent latches
+            w_enable <= 1'b0;
+            r_enable <= 1'b0;
+            increment_indices_w <= 1'b0;
+            
             case (current_state)
                 IDLE: begin
                     idx4_r <= '0;
@@ -296,9 +331,6 @@ module mapper_lrn #(
                     idx3_w <= '0;
                     idx2_w <= '0;
                     idx1_w <= '0;
-                    w_enable <= 1'b0;
-                    r_enable <= 1'b0;
-                    increment_indices_w <= 1'b0;
                     normalized_pixels_count <= '0;
                     normalized_layer <= 1'b0;
 
@@ -307,7 +339,9 @@ module mapper_lrn #(
 
                 READ: begin
                     w_enable <= 1'b0;
-                    if (idx3_r == dim3-1) r_enable <= 1'b0;                   
+                    if (idx3_r == dim3-1) r_enable <= 1'b0;
+                    else r_enable <= 1'b1;
+                    
                     if(r_enable) begin
                         if (idx4_r == dim4-1) begin
                             idx4_r <= '0;
@@ -340,29 +374,36 @@ module mapper_lrn #(
                 end
 
                 WRITE: begin
-                    w_enable <= 1'b1;
+                    w_enable <= 1'b0;
                     r_enable <= 1'b0;
+                    
                     if (normalized_pixels_count == dim1 * dim2 * dim3 * dim4) begin
                         normalized_pixels_count <= '0;
                         normalized_layer <= 1'b1;
                     end
 
-                    if (w_enable) begin
-                        increment_indices_w <= 1;
+                    if (write_update_valid) begin
+                        increment_indices_w <= 1'b1;
                         idx4_w <= next_idx4_w;
                         idx3_w <= next_idx3_w;
                         idx2_w <= next_idx2_w;
                         idx1_w <= next_idx1_w;
                     end else begin
-                        increment_indices_w <= 0;
+                        increment_indices_w <= 1'b0;
                     end
                 end
 
                 WAIT: begin
-                    if(next_state == IDLE) r_enable <= 0;
-                    else                   r_enable <= 1;
-                    normalized_layer <= 0;
-                    increment_indices_w <= 0;
+                    if(next_state == IDLE) r_enable <= 1'b0;
+                    else                   r_enable <= 1'b1;
+                    normalized_layer <= 1'b0;
+                    increment_indices_w <= 1'b0;
+                end
+
+                default: begin
+                    w_enable <= 1'b0;
+                    r_enable <= 1'b0;
+                    increment_indices_w <= 1'b0;
                 end
             endcase 
         end
