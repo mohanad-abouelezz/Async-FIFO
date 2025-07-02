@@ -80,83 +80,81 @@ module mapper_lrn #(
     logic [F_WIDTH + E_WIDTH + M_WIDTH - 1 : 0] w_temp_5,w_temp_6; 
     logic [F_WIDTH + E_WIDTH + M_WIDTH + N_WIDTH- 1 : 0] w_temp_7;
 
-    // Address computation for read operation
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH),.in2_width(E_WIDTH))R_1(
+// Address computation instantiations
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) R_1(
         .in1(idx1_r),
         .in2(dim2),
         .out(r_temp_1)
     );
 
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH),.in2_width(E_WIDTH))R_2(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) R_2(
         .in1(dim1),
         .in2(dim2),
         .out(r_temp_2)
     );
 
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH))R_3(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH)) R_3(
         .in1(r_temp_2),
         .in2(idx3_r),
         .out(r_temp_3)
     );
 
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH))R_4(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH)) R_4(
         .in1(r_temp_2),
         .in2(dim3),
         .out(r_temp_4)
     );
 
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH),.in2_width(N_WIDTH))R_5(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH),.in2_width(N_WIDTH)) R_5(
         .in1(r_temp_4),
         .in2(idx4_r),
         .out(r_temp_5)
     );
 
-    assign r_addr = r_temp_5 + r_temp_3 + r_temp_1 + idx2_r;
-
-     
-/*--------------------- Address computation for write operation-------------------*/
-    cla_modified #(.width_x(V_WIDTH),.width_y(E_WIDTH),.width_sum(V_WIDTH + E_WIDTH)) W_1(
-        .x(padding_num),
-        .y(idx2_w),
+    // Modified CLA instantiations
+    cla #(.width(V_WIDTH + E_WIDTH)) W_1(
+        .x({{(E_WIDTH){1'b0}}, padding_num}),
+        .y({{(V_WIDTH){1'b0}}, idx2_w}),
         .sum(w_temp_1)
     );
 
-    cla_modified #(.width_x(V_WIDTH),.width_y(F_WIDTH),.width_sum(V_WIDTH + F_WIDTH)) W_2(
-        .x(padding_num),
-        .y(idx1_w),
+    cla #(.width(V_WIDTH + F_WIDTH)) W_2(
+        .x({{(F_WIDTH){1'b0}}, padding_num}),
+        .y({{(V_WIDTH){1'b0}}, idx1_w}),
         .sum(w_temp_2)
     );
 
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(E_WIDTH),.in2_width(V_WIDTH + F_WIDTH))W_3(
-        .in1(padded_dim2),
+    unsigned_wallace_tree_multiplier #(.in1_width(E_WIDTH),.in2_width(V_WIDTH + F_WIDTH)) W_3(
+        .in1(padded_dim2_reg),
         .in2(w_temp_2),
         .out(w_temp_3)
     );
 
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH),.in2_width(E_WIDTH))W_4(
-        .in1(padded_dim1),
-        .in2(padded_dim2),
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH),.in2_width(E_WIDTH)) W_4(
+        .in1(padded_dim1_reg),
+        .in2(padded_dim2_reg),
         .out(w_temp_4)
     );
 
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH))W_5(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH)) W_5(
         .in1(w_temp_4),
         .in2(idx3_w),
         .out(w_temp_5)
     );
  
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH))W_6(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH),.in2_width(M_WIDTH)) W_6(
         .in1(w_temp_4),
         .in2(dim3),
         .out(w_temp_6)
     );
    
-    unsigned_wallace_tree_multiplier_modified #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH),.in2_width(N_WIDTH))W_7(
+    unsigned_wallace_tree_multiplier #(.in1_width(F_WIDTH + E_WIDTH + M_WIDTH),.in2_width(N_WIDTH)) W_7(
         .in1(w_temp_6),
         .in2(idx4_w),
         .out(w_temp_7)
     );
 
+    assign r_addr = r_temp_5 + r_temp_3 + r_temp_1 + idx2_r;
     assign w_addr = w_temp_7 + w_temp_5 + w_temp_3 + w_temp_1;
 
 /*----------------------------------------Control part (FSM) -------------------------------------*/
